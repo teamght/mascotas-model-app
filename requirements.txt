@@ -1,0 +1,22 @@
+#
+# mascotas-model-app
+#
+opencv-python
+matplotlib
+imutils
+cmake==3.18.4.post1
+wheel
+dlib==19.21.1
+
+tensorflow==2.4.1
+keras==2.4.0
+Flask
+Flask-Cors
+
+tqdm
+scikit-image
+gunicorn
+pymongo
+azure-storage-blob==2.1.0
+#geopy==2.1.0
+pytz
