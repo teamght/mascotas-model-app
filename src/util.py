@@ -3,6 +3,8 @@ import json
 import numpy as np
 import urllib
 import shutil
+import string
+import random
 from datetime import datetime
 from imutils import face_utils
 
@@ -103,6 +105,14 @@ def obtener_valor_estado_mascota(estado):
     elif estado == 2:
         estado_aux = 1
     return estado_aux
+
+
+def id_generator(size=8, chars=string.ascii_uppercase + string.digits):
+    '''
+    Genera números y letras aleatorias. La longitud de la cadena retornada es 8
+    '''
+    return ''.join(random.choice(chars) for _ in range(size))
+
 
 class NumpyValuesEncoder(json.JSONEncoder):
     def default(self, obj):

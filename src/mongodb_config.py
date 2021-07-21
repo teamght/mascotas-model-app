@@ -4,7 +4,7 @@ import pytz
 from bson.objectid import ObjectId
 
 from src.config import DB_URI, DB_NAME, DB_COLECCION, DISTANCIA_KILOMETROS
-from src.util import obtener_valor_estado_mascota
+from src.util import obtener_valor_estado_mascota, id_generator
 
 
 class MongoDB_Config():
@@ -109,7 +109,6 @@ class MongoDB_Config():
                 )
             print('Fin obtener data mascota {} de base de datos ({})'.format(label, datetime.now()))
             if mascota:
-                mascota['id'] = str(mascota['_id'])
                 del mascota['_id']
                 return True, mascota, None
             return False, None, None
@@ -124,10 +123,9 @@ class MongoDB_Config():
         '''
         print('Inicio obtener data mascota {} de base de datos ({})'.format(id, datetime.now()))
         try:
-            mascota = self.db[DB_COLECCION].find_one({'_id': ObjectId(id)})
+            mascota = self.db[DB_COLECCION].find_one({'id': id})
             print('Fin obtener data mascota {} de base de datos ({})'.format(id, datetime.now()))
             if mascota:
-                mascota['id'] = str(mascota['_id'])
                 del mascota['_id']
                 mascota['list_encoded_string'] = [encoded_string.decode("utf-8") for encoded_string in mascota['list_encoded_string']]
                 return True, mascota, 'Se encontró mascota con la denuncia ingresada.'
@@ -154,7 +152,6 @@ class MongoDB_Config():
             lista_mascotas = list()
             for mascota in mascotas:
                 if mascota:
-                    mascota['id'] = str(mascota['_id'])
                     del mascota['_id']
                     mascota['list_encoded_string'] = [encoded_string.decode("utf-8") for encoded_string in mascota['list_encoded_string']]
                     lista_mascotas.append(mascota)
@@ -170,7 +167,17 @@ class MongoDB_Config():
         try:
             timestamp_registro = datetime.now(pytz.timezone("America/Argentina/Buenos_Aires"))
             
+            is_new_id_generator = False
+            # Validar que no exista en base de datos
+            while not is_new_id_generator:
+                # Genera número de denuncia
+                id_generated = id_generator()
+                is_new_id_generator, _ , _ = self.obtener_mascota_by_id(id_generated)
+                is_new_id_generator = not is_new_id_generator
+
+            print('El ID generado es {}'.format(id_generated))
             identificador = self.db[DB_COLECCION].insert_one({
+                'id': id_generated,
                 'list_encoded_string':list_encoded_string, 
                 'file_name':image_path,
                 'full_file_name':full_file_name,
@@ -186,9 +193,9 @@ class MongoDB_Config():
                 'datos_adicionales':datos_adicionales,
                 'estado':estado,
                 'dueno': {'identificador':dueno.identificador, 'email':dueno.email, 'contacto':dueno.contacto}})
-            identificador = str(identificador.inserted_id)
+            #identificador = str(identificador.inserted_id)
             print('Fin de obtener data mascotas de base de datos ({})'.format(datetime.now()))
-            return True, 'Se logró registrar mascota como desaparecida.', identificador
+            return True, 'Se logró registrar mascota como desaparecida.', id_generated
         except Exception as e:
             print('Hubo un error al registrar mascota desaparecida en base de datos ({}): {}'.format(datetime.now(), e))
             return False, None, 0
@@ -197,7 +204,7 @@ class MongoDB_Config():
         print('Inicio actualizar datos de mascota en base de datos ({})'.format(datetime.now()))
         try:
             self.db[DB_COLECCION].update_one({
-                    '_id': ObjectId(id)
+                    'id': id
                 },{
                     '$set': {
                         'ubicacion': {'x':mascota.geolocalizacion_reportado[0], 'y':mascota.geolocalizacion_reportado[1]},
@@ -225,14 +232,14 @@ class MongoDB_Config():
             nombre_carpeta = None
             if id is not None:
                 mascota = self.db[DB_COLECCION].find_one(
-                    # Búsqueda por campo _id
-                    {'_id': ObjectId(id)}
+                    # Búsqueda por campo id
+                    {'id': id}
                 )
                 
                 nombre_carpeta = mascota['label']
                 
                 self.db[DB_COLECCION].delete_one(
-                    {'_id': ObjectId(id)}
+                    {'id': id}
                 )
             if label is not None:
                 mascota = self.db[DB_COLECCION].find_one(
@@ -256,14 +263,14 @@ class MongoDB_Config():
         try:
             # Consultar si existe registro con el ID
             flag_buscar = self.db[DB_COLECCION].find_one(
-                    {'_id': ObjectId(id)},
+                    {'id': id},
                     # Consulta retorna sólo los campos con valor 1
                     {'file_name':1, 'label':1, '_id':0})
             if flag_buscar is None:
                 return False, 'Número de denuncia no existe.', None
             
             flag_validar = self.db[DB_COLECCION].find_one(
-                    {'_id': ObjectId(id), 'estado': 3},
+                    {'id': id, 'estado': 3},
                     # Consulta retorna sólo los campos con valor 1
                     {'file_name':1, 'label':1, '_id':0})
             if flag_validar is not None:
@@ -272,7 +279,7 @@ class MongoDB_Config():
             timestamp_encontrado = datetime.now(pytz.timezone("America/Argentina/Buenos_Aires"))
             
             flag_update = self.db[DB_COLECCION].update_one({
-                    '_id': ObjectId(id)
+                    'id': id
                 },{
                     '$set': {
                         'estado': 3,
@@ -280,7 +287,7 @@ class MongoDB_Config():
                     }
                 }, upsert=False)
             
-            mascota = self.db[DB_COLECCION].find_one({'_id': ObjectId(id)})
+            mascota = self.db[DB_COLECCION].find_one({'id': id})
             label = mascota['label']
             
             print('Fin de actualizar data de mascota encontrada en base de datos ({})'.format(datetime.now()))
