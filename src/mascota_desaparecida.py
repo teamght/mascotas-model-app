@@ -39,11 +39,12 @@ def empadronar(mongodb,mascota,azure_storage_cliente_mascotas):
         full_file_name, file_name = obtener_nombre_nueva_imagen(label)
         
         try:
-            for nombre_imagen_a_predecir in lista_nombre_imagen_a_predecir:
+            for indice_img, nombre_imagen_a_predecir in enumerate(lista_nombre_imagen_a_predecir):
                 #
                 # Guardar imagen en Azure Storage
                 #
                 # Nombre con el que se guardará en Azure Storage
+                full_file_name, file_name = obtener_nombre_nueva_imagen(label, indice_img)
                 azure_storage_cliente_mascotas.upload_image(full_file_name, nombre_imagen_a_predecir)
         except Exception as e:
             print('Hubo un error al cargar la imagen ({}): {}'.format(datetime.now(), e))
@@ -111,11 +112,12 @@ def reportar_mascota_desaparecida(mongodb, mascota_desaparecida, azure_storage_c
         full_file_name, file_name = obtener_nombre_nueva_imagen(label)
         
         try:
-            for nombre_imagen_a_predecir in lista_nombre_imagen_a_predecir:
+            for indice_img, nombre_imagen_a_predecir in enumerate(lista_nombre_imagen_a_predecir):
                 #
                 # Guardar imagen en Azure Storage
                 #
                 # Nombre con el que se guardará en Azure Storage
+                full_file_name, file_name = obtener_nombre_nueva_imagen(label, indice_img)
                 azure_storage_cliente_mascotas.upload_image(full_file_name, nombre_imagen_a_predecir)
         except Exception as e:
             print('Hubo un error al cargar la imagen ({}): {}'.format(datetime.now(), e))

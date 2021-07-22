@@ -1,5 +1,6 @@
+from datetime import datetime, timedelta
 from azure.storage.blob import BlockBlobService
-
+from azure.storage.blob.sharedaccesssignature import BlobSharedAccessSignature
 from .config import ACCOUNT_NAME, ACCOUNT_KEY, CONTAINER_NAME
 
 #
@@ -9,6 +10,8 @@ block_blob_service = BlockBlobService(
     account_name=ACCOUNT_NAME,
     account_key=ACCOUNT_KEY
 )
+
+blobSharedAccessSignature = BlobSharedAccessSignature(ACCOUNT_NAME, ACCOUNT_KEY)
 
 class AzureStorageClienteMascotas():
 
@@ -38,4 +41,13 @@ class AzureStorageClienteMascotas():
         except Exception as error:
             print('Error al eliminar carpeta: {}'.format(error))
             return False, 'Error al eliminar carpeta: {}'.format(error)
+    
+    def get_file_public_url(self, blob_name):
+        blob_name_aux = blob_name.replace("\\", "/")
+        expiry= datetime.utcnow() + timedelta(hours=24)        
+        sasToken = blobSharedAccessSignature.generate_blob(CONTAINER_NAME, blob_name_aux, expiry=expiry, permission="r")
+
+        url = f"https://{ACCOUNT_NAME}.blob.core.windows.net/{CONTAINER_NAME}/{blob_name_aux}?{sasToken}"
+        return url
+
         

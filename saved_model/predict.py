@@ -112,10 +112,16 @@ def _obtener_label_imagenes_cercanas(list_rutas):
         print(e)
         return False, None
 
-def _obtener_data_mascota(label_image, geolocalizacion_persona):
+def _obtener_data_mascota(label_image, geolocalizacion_persona, azure_storage_cliente_mascotas):
     flag, data_mascota, mensaje = mongodb.obtener_mascota(str(label_image))
     if flag:
-        data_mascota['list_encoded_string'] = [encoded_string.decode("utf-8") for encoded_string in data_mascota['list_encoded_string']]
+        lista = list()
+        full_file_name_aux = str(data_mascota['full_file_name'])
+        for indice, _ in enumerate(data_mascota['list_encoded_string']):
+            lista.append(azure_storage_cliente_mascotas.get_file_public_url(f'{full_file_name_aux.split("_")[0]}_{indice}.jpg'))
+
+        #data_mascota['list_encoded_string'] = [encoded_string.decode("utf-8") for encoded_string in data_mascota['list_encoded_string']]
+        data_mascota['list_encoded_string'] = lista
         return flag, data_mascota
     return flag, mensaje
     
@@ -126,7 +132,7 @@ model = model_config.cargar_modelo()
 filenames_test, image_array, labels, nbof_classes = np.empty(0), np.empty((1,h,w,c)), np.empty(0), 0
 predict_tensorflow_db_imagenes = np.empty((0,32))
 
-def predict_data(imagenes_recortadas_bytes, mascota_datos):
+def predict_data(imagenes_recortadas_bytes, mascota_datos, azure_storage_cliente_mascotas):
     results={}
     try:
         # Consulta por Latitud y Longitud
@@ -162,7 +168,7 @@ def predict_data(imagenes_recortadas_bytes, mascota_datos):
             #print('id_images_and_distances', id_images_and_distances)
             list_resultados_parecidos = list()
             for (_, label, distancia) in id_images_and_distances:
-                flag, mascota = _obtener_data_mascota(label, mascota_datos.geolocalizacion_reportado)
+                flag, mascota = _obtener_data_mascota(label, mascota_datos.geolocalizacion_reportado, azure_storage_cliente_mascotas)
                 if flag:
                     mascota['label'] = label
                     mascota['distancia'] = distancia

@@ -87,7 +87,7 @@ def predict():
                     mascota_datos = Mascota(mascota_dueno_datos, geolocalizacion_persona, None, caracteristicas, fecha_perdida, 
                                             barrio_nombre, genero, perro_nombre, comportamiento, datos_adicionales, estado)
                     # model.predict.predict returns a dictionary
-                    prediction = predict_data(imagenes_recortadas_bytes, mascota_datos)
+                    prediction = predict_data(imagenes_recortadas_bytes, mascota_datos, azure_storage_cliente_mascotas)
                     #print(prediction)
                     
                     dict_respuesta = prediction
@@ -176,11 +176,18 @@ def mascota_empadronar():
                     dict_respuesta['full_file_name'] = full_file_name
                     dict_respuesta['codigo'] = 200
                     dict_respuesta['mensaje'] = respuesta
+
+                    lista = list()
+                    full_file_name_aux = str(dict_respuesta['full_file_name'])
+                    for indice, _ in enumerate(imagenes_recortadas_bytes):
+                        lista.append(azure_storage_cliente_mascotas.get_file_public_url(f'{full_file_name_aux.split("_")[0]}_{indice}.jpg'))
+                    dict_respuesta['imagenes_recortadas'] = lista
+
                 except Exception as e:
                     print('Hubo un error al empadronar la mascota ({}): {}'.format(datetime.now(), e))
                     return {'mensaje':'Hubo un error en el empadronamiento', 'codigo': 400},400
                 
-                dict_respuesta["imagenes_recortadas"] = imagenes_recortadas_bytes
+                #dict_respuesta["imagenes_recortadas"] = imagenes_recortadas_bytes
                 print('Fin de empadronamiento de mascota ({}). Ingresaron {} imagen(es) y se recortó {} imagen(es).'.format(datetime.now(), len(request_lista_imagenes), len(imagenes_recortadas_bytes)))
                 return json.dumps(dict_respuesta, cls=NumpyValuesEncoder),200
             
@@ -390,6 +397,12 @@ def ownerpets():
             if not flag:
                 dict_respuesta['codigo'] = 503
             else:
+                lista = list()
+                full_file_name_aux = str(data_mascotas['full_file_name'])
+                for indice, _ in enumerate(data_mascotas['list_encoded_string']):
+                    lista.append(azure_storage_cliente_mascotas.get_file_public_url(f'{full_file_name_aux.split("_")[0]}_{indice}.jpg'))
+                data_mascotas['list_encoded_string'] = lista
+                
                 dict_respuesta['codigo'] = 200
                 dict_respuesta['mascotas'] = data_mascotas
             dict_respuesta['mensaje'] = mensaje
