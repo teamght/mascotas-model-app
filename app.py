@@ -43,7 +43,11 @@ def predict():
                 contacto = retornar_valor_campo_en_diccionario(data['dueno'], 'contacto')  # Números de teléfonos asociados al perro desaparecido
                 mascota_dueno_datos = MascotaDueno(identificador, email, contacto)
             
-            geolocalizacion_persona = (data['geolocalizacion']['x'], data['geolocalizacion']['y'])
+            geolocalizacion_persona = (0, 0)
+            if existe_campo_en_diccionario(data, 'geolocalizacion'):
+                if existe_campo_en_diccionario(data['geolocalizacion'], 'x'):
+                    geolocalizacion_persona = (data['geolocalizacion']['x'], data['geolocalizacion']['y'])
+
             caracteristicas = retornar_valor_campo_en_diccionario(data, 'caracteristicas')
             fecha_perdida = retornar_valor_campo_en_diccionario(data, 'fecha_de_perdida')
             barrio_nombre = retornar_valor_campo_en_diccionario(data, 'barrio_nombre')
@@ -94,11 +98,48 @@ def predict():
                 except Exception as e:
                     print('Hubo un error en la búsqueda de mascota ({}): {}'.format(datetime.now(), e))
                     return {'mensaje':'Hubo un error en la predicción.', 'codigo': 400},400
+
+                # Registrar en base de datos la mascota
+                mascota_datos = Mascota(mascota_dueno_datos, geolocalizacion_persona, imagenes_recortadas_bytes, caracteristicas, fecha_perdida, 
+                                        barrio_nombre, genero, perro_nombre, comportamiento, datos_adicionales, estado)
+                flag, mensaje, datos_mascota = reportar_mascota_desaparecida(mongodb, mascota_datos, azure_storage_cliente_mascotas)
                 
+                if not flag:
+                    return {'mensaje':'Hubo un error al reportar mascota desaparecida.', 'codigo': 500},500
+                
+                # Seteo de los valores a retornar
+                full_file_name, file_name, label, identificador = datos_mascota
+                dict_mascota = dict()
+                dict_mascota['id'] = identificador
+                dict_mascota['file_name'] = file_name
+                dict_mascota['label'] = label
+                dict_mascota['full_file_name'] = full_file_name
+
+                dict_respuesta['mascota'] = dict_mascota
+                dict_respuesta['codigo'] = 200
+                dict_respuesta['mensaje'] = "{} {}".format(str(mensaje),dict_respuesta['mensaje'])
+
+                flag, data_mascotas, mensaje = mongodb.obtener_mascota_by_id(identificador)
+                #flag, data_mascotas, mensaje = mongodb.obtener_mascotas(identificador)
+                
+                if not flag:
+                    dict_respuesta['codigo'] = 503
+                else:
+                    lista = list()
+                    full_file_name_aux = str(data_mascotas['full_file_name'])
+                    for indice, _ in enumerate(data_mascotas['list_encoded_string']):
+                        lista.append(azure_storage_cliente_mascotas.get_file_public_url(f'{full_file_name_aux.split("_")[0]}_{indice}.jpg'))
+                    dict_respuesta['list_encoded_string'] = lista
+                    
                 dict_respuesta["imagenes_recortadas"] = imagenes_recortadas_bytes
                 print('Fin de búsqueda de mascota ({}). Ingresaron {} imagen(es) y se recortó {} imagen(es).'.format(datetime.now(), len(request_lista_imagenes), len(imagenes_recortadas_bytes)))
-                return json.dumps(dict_respuesta, cls=NumpyValuesEncoder),200
-            
+                #return jsonify(json.dumps(dict_respuesta, cls=NumpyValuesEncoder)),200
+                return app.response_class(
+                    response=json.dumps(dict_respuesta, cls=NumpyValuesEncoder),
+                    status=200,
+                    mimetype='application/json'
+                )
+                
             return json.dumps(respuesta, cls=NumpyValuesEncoder),200
     except Exception as e:
         print('Hubo un error al identificar las mascotas más parecidas ({}): {}'.format(datetime.now(), e))
@@ -122,7 +163,11 @@ def mascota_empadronar():
                 contacto = retornar_valor_campo_en_diccionario(data['dueno'], 'contacto')  # Números de teléfonos asociados al perro desaparecido
                 mascota_dueno_datos = MascotaDueno(identificador, email, contacto)
             
-            geolocalizacion_persona = (data['geolocalizacion']['x'], data['geolocalizacion']['y'])
+            geolocalizacion_persona = (0, 0)
+            if existe_campo_en_diccionario(data, 'geolocalizacion'):
+                if existe_campo_en_diccionario(data['geolocalizacion'], 'x'):
+                    geolocalizacion_persona = (data['geolocalizacion']['x'], data['geolocalizacion']['y'])
+            
             caracteristicas = retornar_valor_campo_en_diccionario(data, 'caracteristicas')
             fecha_perdida = retornar_valor_campo_en_diccionario(data, 'fecha_de_perdida')
             barrio_nombre = retornar_valor_campo_en_diccionario(data, 'barrio_nombre')
@@ -217,7 +262,10 @@ def report():
                 mascota_dueno_datos = MascotaDueno(identificador, email, contacto)
             
             # Almacenar geolocalización como objeto
-            geolocalizacion_persona = (data['geolocalizacion']['x'], data['geolocalizacion']['y'])
+            geolocalizacion_persona = (0, 0)
+            if existe_campo_en_diccionario(data, 'geolocalizacion'):
+                if existe_campo_en_diccionario(data['geolocalizacion'], 'x'):
+                    geolocalizacion_persona = (data['geolocalizacion']['x'], data['geolocalizacion']['y'])
             lista_imagenes_bytes = data['lista_imagenes_bytes']
             if lista_imagenes_bytes == None:
                 return {'mensaje':'Debe ingresar al menos una imagen.', 'codigo': 400},400
@@ -273,7 +321,10 @@ def update():
                 email = retornar_valor_campo_en_diccionario(data['dueno'], 'email') # Correo electrónico de la persona que reportó desaparición
                 contacto = retornar_valor_campo_en_diccionario(data['dueno'], 'contacto')  # Números de teléfonos asociados al perro desaparecido
             
-            geolocalizacion_persona = (data['geolocalizacion']['x'], data['geolocalizacion']['y'])
+            geolocalizacion_persona = (0, 0)
+            if existe_campo_en_diccionario(data, 'geolocalizacion'):
+                if existe_campo_en_diccionario(data['geolocalizacion'], 'x'):
+                    geolocalizacion_persona = (data['geolocalizacion']['x'], data['geolocalizacion']['y'])
             caracteristicas = data['caracteristicas']
             fecha_perdida = data['fecha_de_perdida'] if 'fecha_de_perdida' in data else ''
             barrio_nombre = retornar_valor_campo_en_diccionario(data, 'barrio_nombre')

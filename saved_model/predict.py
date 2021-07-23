@@ -178,10 +178,12 @@ def predict_data(imagenes_recortadas_bytes, mascota_datos, azure_storage_cliente
             results['mensaje'] = 'Si se han encontrado mascotas parecidas.'
             results['codigo'] = 200
         else:
+            results['resultados'] = []
             results['mensaje'] = 'No se han encontrado mascotas parecidas.'
             results['codigo'] = 404
     except Exception as e:
         mensaje = 'Hubo un error al predecir la imágen'
+        results['resultados'] = []
         results['mensaje'] = mensaje
         results['codigo'] = 503
         print('{} ({})'.format(mensaje, datetime.now()))
