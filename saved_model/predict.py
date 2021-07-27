@@ -162,7 +162,7 @@ def predict_data(imagenes_recortadas_bytes, mascota_datos, azure_storage_cliente
             if not flag:
                 return results
             
-            flag, id_images_and_distances = _obtener_label_imagenes_cercanas([(img_array, label, distancia) for _, img_array, label, distancia in images_and_distances[0:10]])
+            flag, id_images_and_distances = _obtener_label_imagenes_cercanas([(img_array, label, distancia) for _, img_array, label, distancia in images_and_distances[0:3]])
             if not flag:
                 return results
             #print('id_images_and_distances', id_images_and_distances)
