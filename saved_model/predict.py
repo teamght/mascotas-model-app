@@ -104,6 +104,13 @@ def _obtener_label_imagenes_cercanas(list_rutas):
         seen = set()
         seen_add = seen.add
         prueba = [(array_img, label, distancia) for array_img, label, distancia in list_rutas if not (label in seen or seen_add(label))]
+        '''
+        prueba = []
+        for indice_ruta, array_img, label, distancia in enumerate(list_rutas):
+            if not (label in seen or seen_add(label)):
+                if indice_ruta > 0 and prueba[indice_ruta-1][2] + 0.000001 >= distancia:
+                    prueba.append((array_img, label, distancia))
+        '''
         #print('Fin obtener indices de las imágenes más cercanas: {}'.format(prueba))
         print('Fin obtener indices de las imágenes más cercanas')
         return True, prueba
@@ -162,6 +169,9 @@ def predict_data(imagenes_recortadas_bytes, mascota_datos, azure_storage_cliente
             if not flag:
                 return results
             
+            # Retornar valores con una distancia menor
+            #images_and_distances = [(i, img_array, label, distancia) for i, img_array, label, distancia in images_and_distances if distancia <= 0.0009]
+            # Retornar lista con los 3 primeros elementos
             flag, id_images_and_distances = _obtener_label_imagenes_cercanas([(img_array, label, distancia) for _, img_array, label, distancia in images_and_distances[0:3]])
             if not flag:
                 return results

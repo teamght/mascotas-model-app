@@ -58,9 +58,12 @@ def get_detection_and_shape(detector, predictor, img):
         print(f"Se necesitaba 1 cara, se encontraron {len(dets)}")
         return False, f"Se necesitaba 1 cara, se encontraron {len(dets)}", None
     d = dets[0]
-    shape = predictor(img, d.rect)
-    shape = face_utils.shape_to_np(shape)
-    return True, d, [tuple(x) for x in shape]
+    print("Lista de caras detectadas:{}".format(d.confidence))
+    if d.confidence >= 0.9:
+        shape = predictor(img, d.rect)
+        shape = face_utils.shape_to_np(shape)
+        return True, d, [tuple(x) for x in shape]
+    return False, f"El valor de confianza es menor al esperado {d.confidence}", None
 
 
 def download_image(img_url, img_path):
