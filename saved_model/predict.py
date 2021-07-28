@@ -174,7 +174,7 @@ def predict_data(imagenes_recortadas_bytes, mascota_datos, azure_storage_cliente
             flag, images_and_distances = _query_image_tensorflow(predict_tensorflow_imagenes_cargadas, predict_tensorflow_db_imagenes, image_array, labels, nbof_classes)
             if not flag:
                 return results
-            
+
             flag, id_images_and_distances = _obtener_label_imagenes_cercanas([(img_array, label, distancia) for _, img_array, label, distancia in images_and_distances])
             if not flag:
                 return results
