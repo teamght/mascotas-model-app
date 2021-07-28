@@ -98,12 +98,25 @@ def _query_image_tensorflow(predict_imagenes_cargadas, predict, image_array, lab
         return False, None
 
 def _obtener_label_imagenes_cercanas(list_rutas):
-    #print('Inicio obtener indices de las imágenes más cercanas {}'.format(list_rutas))
     print('Inicio obtener indices de las imágenes más cercanas')
     try:
         seen = set()
         seen_add = seen.add
-        prueba = [(array_img, label, distancia) for array_img, label, distancia in list_rutas if not (label in seen or seen_add(label))]
+        prueba = []
+        for indice_ruta, (array_img, label, distancia) in enumerate(list_rutas):
+            # Retornar lista con los 3 primeros elementos
+            if len(prueba) > 3:
+                break
+            
+            if not (label in seen or seen_add(label)):
+                if indice_ruta > 0:
+                    distancia_aux = np.sum([prueba[-1][2], np.float32(0.000001)])
+                    if distancia_aux <= distancia:
+                        prueba.append((array_img, label, distancia))
+
+                if indice_ruta == 0:
+                    prueba.append((array_img, label, distancia))
+        
         #print('Fin obtener indices de las imágenes más cercanas: {}'.format(prueba))
         print('Fin obtener indices de las imágenes más cercanas')
         return True, prueba
@@ -161,8 +174,8 @@ def predict_data(imagenes_recortadas_bytes, mascota_datos, azure_storage_cliente
             flag, images_and_distances = _query_image_tensorflow(predict_tensorflow_imagenes_cargadas, predict_tensorflow_db_imagenes, image_array, labels, nbof_classes)
             if not flag:
                 return results
-            
-            flag, id_images_and_distances = _obtener_label_imagenes_cercanas([(img_array, label, distancia) for _, img_array, label, distancia in images_and_distances[0:4]])
+
+            flag, id_images_and_distances = _obtener_label_imagenes_cercanas([(img_array, label, distancia) for _, img_array, label, distancia in images_and_distances])
             if not flag:
                 return results
             #print('id_images_and_distances', id_images_and_distances)
