@@ -175,9 +175,6 @@ def predict_data(imagenes_recortadas_bytes, mascota_datos, azure_storage_cliente
             if not flag:
                 return results
             
-            # Retornar valores con una distancia menor
-            images_and_distances = [(i, img_array, label, distancia) for i, img_array, label, distancia in images_and_distances if distancia <= 0.0104]
-            
             flag, id_images_and_distances = _obtener_label_imagenes_cercanas([(img_array, label, distancia) for _, img_array, label, distancia in images_and_distances])
             if not flag:
                 return results
