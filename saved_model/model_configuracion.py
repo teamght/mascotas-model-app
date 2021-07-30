@@ -10,11 +10,9 @@ class ModelConfig():
     def __init__(self):
         pass
 
-    
     def cargar_modelo(self):
 
         alpha = 0.3
-
         def triplet(y_true,y_pred):
             
             a = y_pred[0::3]
@@ -38,9 +36,7 @@ class ModelConfig():
 
         print('Loading model {}'.format(MODELO_ENTRENADO))
         try:
-            import tensorflow as tf
-            import keras
-            model = keras.models.load_model(
+            model = tf.keras.models.load_model(
                 MODELO_ENTRENADO,
                 custom_objects={'tf': tf, 'triplet':triplet, 'triplet_acc':triplet_acc},compile=False)
 
@@ -48,9 +44,4 @@ class ModelConfig():
             print(model)
             return model
         except Exception as e:
-            print('Error')
-            print(e)
-
-#if __name__ == '__main__':
-#    c = ModelConfig()
-#    c.cargar_modelo()
+            print(f'Error al cargar el modelo: {e}')

@@ -3,10 +3,14 @@ import cv2
 import os
 import imutils
 from datetime import datetime
+import numpy as np
 
+import skimage as sk
 from .rotate import DogFaceRotate
 from .crop import DogFaceCrop
 from .resize import DogFaceResize
+from skimage import io
+from ..config import SIZE
 
 class DogFaceCropper():
 
@@ -41,18 +45,35 @@ class DogFaceCropper():
         img = imutils.rotate_bound(img, tracking['angle'])
         adjused_cropping_points = tuple([round(p/tracking['ratio']) for p in tracking['cropping_points']])
         return self.cropper.crop_with_padding(img, *adjused_cropping_points)
+    
+    def load_images(self, filenames):
+        """
+        Use scikit-image library to load the pictures from files to numpy array.
+        """
+        h,w,c = sk.io.imread(filenames[0]).shape
+        images = np.empty((len(filenames),h,w,c))
+        for i,f in enumerate(filenames):
+            images[i] = sk.io.imread(f) # Leer archivo sin normalizar
+        return images
 
+    def predict_generator(self, filenames, batch_size=32):
+        """
+        Prediction generator.
+        """
+        for i in range(0,len(filenames),batch_size):
+            print(f'predict_generator: {i} de {len(filenames)}')
+            images_batch = self.load_images(filenames[i:i+batch_size])
+            yield images_batch
+    
     def process_file(self, img_path, save_as_path = None):
         try:
-            img = cv2.imread(img_path)
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            
+            img = self.load_images([img_path])[0]
+            img = img.astype(np.uint8)
             flag, img_processed = self.process_image(img)
-
+            
             if flag:
                 if save_as_path is not None:
-                    img_out = cv2.cvtColor(img_processed, cv2.COLOR_RGB2BGR)
-                    cv2.imwrite(save_as_path, img_out)
+                    sk.io.imsave(save_as_path, img_processed)
                 return True
             else:
                 return False

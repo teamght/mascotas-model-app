@@ -1,16 +1,20 @@
-import io
+
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+import tensorflow as tf
+import os
 import numpy as np
+import skimage as sk
+import matplotlib.pyplot as plt
+import tensorflow.keras.backend as K
+import io
 import itertools
 from datetime import datetime
 import base64
 from PIL import Image
-import tensorflow as tf
-from tensorflow import keras
-import tensorflow.keras.backend as K
-#from geopy import distance
-
 from saved_model.model_configuracion import ModelConfig
-from saved_model.online_training import predict_generator
+#from saved_model.online_training import predict_generator
 from src.config import SIZE
 from src.mongodb_config import MongoDB_Config
 from src.util import obtener_nombre_nueva_imagen
@@ -19,16 +23,61 @@ h,w,c = SIZE
 model_config = ModelConfig()
 mongodb = MongoDB_Config()
 
+
+def load_images(filenames):
+    """
+    Use scikit-image library to load the pictures from files to numpy array.
+    """
+    h,w,c = SIZE
+    images = np.empty((len(filenames),h,w,c))
+    for i,img_path in enumerate(filenames):
+        # Base64
+        with open(img_path,'rb') as image_file:
+            img_base64_encode = base64.b64encode(image_file.read())
+            img_base64 = base64.b64decode(img_base64_encode)
+            images[i] = np.array(Image.open(io.BytesIO(img_base64)))/255.0 # Reducción en distancia
+        #images[i] = sk.io.imread(img_path)/255.0 # SI
+    return images
+
+def predict_generator(filenames, batch_size=32):
+    """
+    Prediction generator.
+    filenames: Lista de rutas de los archivos
+    """
+    for i in range(0,len(filenames),batch_size):
+        #print(f'predict_generator: {i} de {len(filenames)}')
+        images_batch = load_images(filenames[i:i+batch_size])
+        yield images_batch
+
+def distance(v1, v2):
+    diff = np.square(v1-v2)
+    dist = np.sum(diff)
+    return dist
+
+def _predict_tensorflow_array(model, img_arrays):
+    print('Inicio predict_tensorflow array {}'.format(datetime.now()))
+    print(f"{img_arrays.shape}")
+    if img_arrays.size == 0:
+        return np.empty((0,32))
+    predict = model.predict(img_arrays)
+    print('Fin predict_tensorflow array {}'.format(datetime.now()))
+    return predict
+
 def _predict_tensorflow(model, filenames_test):
     print('Inicio predict_tensorflow {}'.format(datetime.now()))
+    
     #generator = predict_generator(filenames_test, 64) # filenames_test, batch=32
     #steps = np.ceil(len(filenames_test)/64) # all
     #predict = model.predict_generator(generator, steps=steps)
     #predict = model.predict(generator, steps=steps)
-    if filenames_test.size == 0:
-        return np.empty((0,32))
+    #if filenames_test.size == 0:
+    #    return np.empty((0,32))
     
-    predict = model.predict(filenames_test)
+    #predict = model.predict(filenames_test)
+    
+    generator = predict_generator(filenames_test, batch_size=len(filenames_test))
+    predict = model.predict_generator(generator, steps=1)
+
     print('Fin predict_tensorflow {}'.format(datetime.now()))
     return predict
 
@@ -50,7 +99,7 @@ def _obtener_ruta_de_imagen(geolocalizacion_persona, estado):
             labels = np.append(labels, data_mascota['label'])
             image_db = data_mascota['list_encoded_string'][0]
             bytestring = base64.b64decode(image_db)
-            image = np.array(Image.open(io.BytesIO(bytestring)))
+            image = np.array(Image.open(io.BytesIO(bytestring)))/255.0
             image_array[indice] = image
             
     if len(labels) == 0:
@@ -87,7 +136,7 @@ def _query_image_tensorflow(predict_imagenes_cargadas, predict, image_array, lab
         else:
             # Workaround cuando sólo se tiene una imagen en base de datos
             images_and_distances = [(i, filename, label, distance) for i, filename, label, distance in images_and_distances]
-
+        
         # los ordeno por similitud
         images_and_distances.sort(key=lambda x: x[3])
 
@@ -145,7 +194,7 @@ model = model_config.cargar_modelo()
 filenames_test, image_array, labels, nbof_classes = np.empty(0), np.empty((1,h,w,c)), np.empty(0), 0
 predict_tensorflow_db_imagenes = np.empty((0,32))
 
-def predict_data(imagenes_recortadas_bytes, mascota_datos, azure_storage_cliente_mascotas):
+def predict_data(list_img_paths, imagenes_recortadas_base64, mascota_datos, azure_storage_cliente_mascotas):
     results={}
     try:
         # Consulta por Latitud y Longitud
@@ -155,21 +204,16 @@ def predict_data(imagenes_recortadas_bytes, mascota_datos, azure_storage_cliente
         global labels
         global nbof_classes
         filenames_test, image_array, labels, nbof_classes = _obtener_ruta_de_imagen(mascota_datos.geolocalizacion_reportado, mascota_datos.estado)
-        predict_tensorflow_db_imagenes = _predict_tensorflow(model, image_array)
+        predict_tensorflow_db_imagenes = _predict_tensorflow_array(model, image_array)
 
-        np_images = []
-        for imagen_recortada_bytes in imagenes_recortadas_bytes:
-            np_image = np.array(Image.open(io.BytesIO(base64.b64decode(imagen_recortada_bytes))))
-            np_images.append(np_image)
+        list_img_arrays = np.empty((len(imagenes_recortadas_base64),h,w,c))
         
-        n_imagenes = len(imagenes_recortadas_bytes)
-        array_imagenes_a_predecir = np.empty((n_imagenes,h,w,c))
-        for i, np_image in enumerate(np_images):
-            array_imagenes_a_predecir[i] = np_image
-        predict_tensorflow_imagenes_cargadas = _predict_tensorflow(model, array_imagenes_a_predecir)
+        list_img_paths.sort()
+        for indice, img_path in enumerate(list_img_paths):
+            list_img_arrays[indice] = sk.io.imread(img_path)/255.0
         
-        #print('predict_tensorflow_imagenes_cargadas {}'.format(len(predict_tensorflow_imagenes_cargadas)))
-        #print('predict_tensorflow_db_imagenes {}'.format(len(predict_tensorflow_db_imagenes)))
+        predict_tensorflow_imagenes_cargadas = _predict_tensorflow(model, list_img_paths)
+        
         if predict_tensorflow_db_imagenes.size > 0:
             flag, images_and_distances = _query_image_tensorflow(predict_tensorflow_imagenes_cargadas, predict_tensorflow_db_imagenes, image_array, labels, nbof_classes)
             if not flag:
@@ -204,7 +248,7 @@ def predict_data(imagenes_recortadas_bytes, mascota_datos, azure_storage_cliente
     return results
 
 # este método debe actualizar: predict_tensorflow_db_imagenes, filenames_test, labels, nbof_classes
-def add_image_to_memory_predictions(data, label):
+def add_image_to_memory_predictions(list_img_paths, label):
 
     global predict_tensorflow_db_imagenes
     global filenames_test
@@ -212,13 +256,17 @@ def add_image_to_memory_predictions(data, label):
     global labels
     global nbof_classes
     
-    image = np.array(Image.open(data))
-    
-    array_imagen_a_predecir = np.empty((1,h,w,c))
-    
-    array_imagen_a_predecir[0] = image
-    
-    predict_tensorflow_imagen_cargada = _predict_tensorflow(model, array_imagen_a_predecir)
+    images = np.empty((len(list_img_paths),h,w,c))
+    # Base64
+    for i,img_path in enumerate(list_img_paths):
+        with open(img_path,'rb') as image_file:
+            img_base64_encode = base64.b64encode(image_file.read())
+            img_base64 = base64.b64decode(img_base64_encode)
+            image = np.array(Image.open(io.BytesIO(img_base64)))/255.0 # Reducción en distancia
+            images[i] = image
+            #images[i] = sk.io.imread(img_path)/255.0
+
+    predict_tensorflow_imagen_cargada = _predict_tensorflow(model, list_img_paths)
     
     predict_tensorflow_db_imagenes = np.concatenate((predict_tensorflow_db_imagenes, predict_tensorflow_imagen_cargada))
     

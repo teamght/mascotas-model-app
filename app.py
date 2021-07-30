@@ -75,26 +75,22 @@ def predict():
             # Opción para recuperar lista de imágenes en arreglo de URL's
             if existe_campo_en_diccionario(data, 'lista_imagenes_url'):
                 request_lista_imagenes = data['lista_imagenes_url']
-            
+
+                if len(request_lista_imagenes) == 0:
+                    return {'mensaje':'Debe ingresar al menos una imagen (URL de imagen).', 'codigo': 400},400
+                
                 # Detección y recorte de rostro del perro
-                flag, lista_imagenes_bytes = dog_face_cropper_service.descargar_imagenes_mascota(request_lista_imagenes)
+                flag, list_img_paths, imagenes_recortadas_base64, respuesta = dog_face_cropper_service.descargar_imagenes_mascota(request_lista_imagenes)
                 if flag:
-                    flag, imagenes_mascota_recortadas_bytes, respuesta = dog_face_cropper_service.recortar_imagenes_mascota(lista_imagenes_bytes)
-                    if flag:
-                        imagenes_recortadas_bytes = imagenes_mascota_recortadas_bytes
-                    
-                    if len(request_lista_imagenes) == 0:
-                        return {'mensaje':'Debe ingresar al menos una imagen (URL de imagen).', 'codigo': 400},400
-            
+                    imagenes_recortadas_bytes = imagenes_recortadas_base64
+                
             if len(imagenes_recortadas_bytes) > 0:
                 try:
                     mascota_datos = Mascota(mascota_dueno_datos, geolocalizacion_persona, None, caracteristicas, fecha_perdida, 
-                                            barrio_nombre, genero, perro_nombre, comportamiento, datos_adicionales, estado)
-                    # model.predict.predict returns a dictionary
-                    prediction = predict_data(imagenes_recortadas_bytes, mascota_datos, azure_storage_cliente_mascotas)
-                    #print(prediction)
+                                                    barrio_nombre, genero, perro_nombre, comportamiento, datos_adicionales, estado)
+                    respuesta = predict_data(list_img_paths, imagenes_recortadas_bytes, mascota_datos, azure_storage_cliente_mascotas)
                     
-                    dict_respuesta = prediction
+                    dict_respuesta = respuesta
                 except Exception as e:
                     print('Hubo un error en la búsqueda de mascota ({}): {}'.format(datetime.now(), e))
                     return {'mensaje':'Hubo un error en la predicción.', 'codigo': 400},400
@@ -102,7 +98,7 @@ def predict():
                 # Registrar en base de datos la mascota
                 mascota_datos = Mascota(mascota_dueno_datos, geolocalizacion_persona, imagenes_recortadas_bytes, caracteristicas, fecha_perdida, 
                                         barrio_nombre, genero, perro_nombre, comportamiento, datos_adicionales, estado)
-                flag, mensaje, datos_mascota = reportar_mascota_desaparecida(mongodb, mascota_datos, azure_storage_cliente_mascotas)
+                flag, mensaje, datos_mascota = reportar_mascota_desaparecida(mongodb, mascota_datos, azure_storage_cliente_mascotas, list_img_paths)
                 
                 if not flag:
                     return {'mensaje':'Hubo un error al reportar mascota desaparecida.', 'codigo': 500},500
@@ -131,15 +127,14 @@ def predict():
                         lista.append(azure_storage_cliente_mascotas.get_file_public_url(f'{full_file_name_aux.split("_")[0]}_{indice}.jpg'))
                     dict_respuesta['list_encoded_string'] = lista
                     
-                dict_respuesta["imagenes_recortadas"] = imagenes_recortadas_bytes
+                dict_respuesta["imagenes_recortadas"] = [img_base64.decode("utf-8") for img_base64 in imagenes_recortadas_bytes]
                 print('Fin de búsqueda de mascota ({}). Ingresaron {} imagen(es) y se recortó {} imagen(es).'.format(datetime.now(), len(request_lista_imagenes), len(imagenes_recortadas_bytes)))
-                #return jsonify(json.dumps(dict_respuesta, cls=NumpyValuesEncoder)),200
                 return app.response_class(
                     response=json.dumps(dict_respuesta, cls=NumpyValuesEncoder),
                     status=200,
                     mimetype='application/json'
                 )
-                
+            
             return json.dumps(respuesta, cls=NumpyValuesEncoder),200
     except Exception as e:
         print('Hubo un error al identificar las mascotas más parecidas ({}): {}'.format(datetime.now(), e))
@@ -281,7 +276,7 @@ def report():
             
             mascota_datos = Mascota(mascota_dueno_datos, geolocalizacion_persona, lista_imagenes_bytes, caracteristicas, fecha_perdida, 
                                             barrio_nombre, genero, perro_nombre, comportamiento, datos_adicionales, estado)
-            flag, mensaje, datos_mascota = reportar_mascota_desaparecida(mongodb, mascota_datos, azure_storage_cliente_mascotas)
+            flag, mensaje, datos_mascota = reportar_mascota_desaparecida(mongodb, mascota_datos, azure_storage_cliente_mascotas, None)
             
             if not flag:
                 return {'mensaje':'Hubo un error al reportar mascota desaparecida.', 'codigo': 500},500

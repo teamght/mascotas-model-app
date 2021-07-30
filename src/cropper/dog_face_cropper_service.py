@@ -59,31 +59,49 @@ class DogFaceCropperService():
     
     def descargar_imagenes_mascota(self, list_img_url):
         print('Inicio de descarga de imágenes de mascota')
-        list_imagen_bytes = list()
+        results={}
+        imagenes_recortadas_base64 = []
+        list_img_paths = [] # Ubicación de los archivos en disco
         try:
+            if len(list_img_url) == 0:
+                results['mensaje'] = 'Debe cargar al menos una imagen de mascota a recortar.'
+                results['codigo'] = 400
+                return False, [], [], results
+            
             for img_url in list_img_url:
                 try:
-                    nombre_imagen_a_recortar, _ = self.obtener_nombre_archivos()
+                    nombre_imagen_a_recortar, nombre_imagen_recortada = self.obtener_nombre_archivos()
                     
                     flag, img_path = download_image(img_url, nombre_imagen_a_recortar)
                     print(nombre_imagen_a_recortar, img_path)
 
                     if flag:
-                        with open(img_path,'rb') as file:
-                            imagen = file.read()
-                        imagen = base64.b64encode(imagen).decode('utf-8')
-                        list_imagen_bytes.append(imagen)
-                
+                        try:
+                            flag = dfc.process_file(nombre_imagen_a_recortar, nombre_imagen_recortada)
+                            if flag:
+                                list_img_paths.append(nombre_imagen_recortada)
+
+                                # Arreglo de Bytes64
+                                with open(nombre_imagen_recortada,'rb') as file:
+                                    img_base64_encode = base64.b64encode(file.read())
+                                    imagenes_recortadas_base64.append(img_base64_encode)
+                        except Exception as e:
+                            eliminar_archivos_temporales(nombre_imagen_a_recortar)
+                            print('Hubo un error durante el recorte de las imágenes de mascota ({}): {}'.format(datetime.now(), e))
+                            results['mensaje'] = 'Hubo un error durante el recorte de las imágenes de mascota.'
+                            results['codigo'] = 503
+                            return False, [], [], results
+
                     eliminar_archivos_temporales(nombre_imagen_a_recortar)
                 except Exception as e:
                     print('Hubo un error al descargar una imagen de mascota: ({}) {}'.format(datetime.now(), e))
                     eliminar_archivos_temporales(nombre_imagen_a_recortar)
-                    return False, []
+                    return False, [], [], results
             print('Fin de descarga de imágenes de mascota')
-            return True, list_imagen_bytes
+            return True, list_img_paths, imagenes_recortadas_base64, results
         except Exception as e:
             print('Hubo un error durante el proceso de descarga de imagen de mascota: ({}) {}'.format(datetime.now(), e))
-            return False, []
+            return False, [], [], results
 
     def recortar_imagenes_mascota(self, list_imagen_bytes):
         print('Inicio de Service para recortar las imágenes ({})'.format(datetime.now()))
