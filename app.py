@@ -63,15 +63,15 @@ def predict():
             # Opción para recuperar lista de imágenes en arreglo de bytes
             if existe_campo_en_diccionario(data, 'lista_imagenes_bytes'):
                 request_lista_imagenes = data['lista_imagenes_bytes']
-            
-                # Detección y recorte de rostro del perro
-                flag, imagenes_mascota_recortadas_bytes, respuesta = dog_face_cropper_service.recortar_imagenes_mascota(request_lista_imagenes)
-                if flag:
-                    imagenes_recortadas_bytes = imagenes_mascota_recortadas_bytes
-                
+
                 if len(request_lista_imagenes) == 0:
                     return {'mensaje':'Debe ingresar al menos una imagen (arreglo de bytes).', 'codigo': 400},400
             
+                # Detección y recorte de rostro del perro
+                flag, list_img_paths, imagenes_recortadas_base64, respuesta = dog_face_cropper_service.recortar_imagenes_mascota(request_lista_imagenes)
+                if flag:
+                    imagenes_recortadas_bytes = imagenes_recortadas_base64
+                
             # Opción para recuperar lista de imágenes en arreglo de URL's
             if existe_campo_en_diccionario(data, 'lista_imagenes_url'):
                 request_lista_imagenes = data['lista_imagenes_url']
