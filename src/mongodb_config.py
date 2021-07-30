@@ -114,7 +114,7 @@ class MongoDB_Config():
             return False, None, None
         except Exception as e:
             mensaje = 'Hubo un error en obtener data mascota de base de datos'
-            print('Hubo un error. {} ({}): {}'.format(mensaje, datetime.now(), e))
+            print('Hubo un error. {}. Label:{} ({}): {}'.format(mensaje, label, datetime.now(), e))
             return False, None, mensaje
 
     def obtener_mascota_by_id(self, id):
@@ -132,7 +132,7 @@ class MongoDB_Config():
             return False, None, 'No se encontró mascota con la denuncia ingresada.'
         except Exception as e:
             mensaje = 'Hubo un error en obtener data mascota de base de datos'
-            print('Hubo un error. {} ({}): {}'.format(mensaje, datetime.now(), e))
+            print('Hubo un error. {}. ID:{} ({}): {}'.format(mensaje, id, datetime.now(), e))
             return False, None, mensaje
 
     def obtener_mascotas(self, dueno_identificador):
