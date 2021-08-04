@@ -14,14 +14,18 @@ from datetime import datetime
 import base64
 from PIL import Image
 from saved_model.model_configuracion import ModelConfig
-#from saved_model.online_training import predict_generator
 from src.config import SIZE
 from src.mongodb_config import MongoDB_Config
-from src.util import obtener_nombre_nueva_imagen
+from src.mascota_service import MascotaService
+from src.util import obtener_nombre_nueva_imagen,encode_string_to_array
 
 h,w,c = SIZE
-model_config = ModelConfig()
 mongodb = MongoDB_Config()
+mascota_service = MascotaService()
+model_config = ModelConfig()
+model = model_config.cargar_modelo()
+filenames_test, image_array, labels, nbof_classes = np.empty(0), np.empty((1,h,w,c)), np.empty(0), 0
+predict_tensorflow_db_imagenes = np.empty((0,32))
 
 
 def load_images(filenames):
@@ -36,7 +40,6 @@ def load_images(filenames):
             img_base64_encode = base64.b64encode(image_file.read())
             img_base64 = base64.b64decode(img_base64_encode)
             images[i] = np.array(Image.open(io.BytesIO(img_base64)))/255.0 # Reducción en distancia
-        #images[i] = sk.io.imread(img_path)/255.0 # SI
     return images
 
 def predict_generator(filenames, batch_size=32):
@@ -45,7 +48,6 @@ def predict_generator(filenames, batch_size=32):
     filenames: Lista de rutas de los archivos
     """
     for i in range(0,len(filenames),batch_size):
-        #print(f'predict_generator: {i} de {len(filenames)}')
         images_batch = load_images(filenames[i:i+batch_size])
         yield images_batch
 
@@ -56,63 +58,44 @@ def distance(v1, v2):
 
 def _predict_tensorflow_array(model, img_arrays):
     print('Inicio predict_tensorflow array {}'.format(datetime.now()))
-    print(f"{img_arrays.shape}")
+    print(f"Dimensiones del array de imagenes: {img_arrays.shape}")
     if img_arrays.size == 0:
         return np.empty((0,32))
     predict = model.predict(img_arrays)
     print('Fin predict_tensorflow array {}'.format(datetime.now()))
     return predict
 
-def _predict_tensorflow(model, filenames_test):
+def _predict_tensorflow(model, filenames):
     print('Inicio predict_tensorflow {}'.format(datetime.now()))
-    
-    #generator = predict_generator(filenames_test, 64) # filenames_test, batch=32
-    #steps = np.ceil(len(filenames_test)/64) # all
-    #predict = model.predict_generator(generator, steps=steps)
-    #predict = model.predict(generator, steps=steps)
-    #if filenames_test.size == 0:
-    #    return np.empty((0,32))
-    
-    #predict = model.predict(filenames_test)
-    
-    generator = predict_generator(filenames_test, batch_size=len(filenames_test))
+    generator = predict_generator(filenames, batch_size=len(filenames))
     predict = model.predict_generator(generator, steps=1)
-
     print('Fin predict_tensorflow {}'.format(datetime.now()))
     return predict
 
-def _obtener_ruta_de_imagen(geolocalizacion_persona, estado):
+def _obtener_data_y_label_mascotas(geolocalizacion_persona, estado):
     print('Loading the dataset... {}'.format(datetime.now()))
 
-    #lista_mascotas_reportadas = mongodb.obtener_mascotas_reportadas_por_geolocalizacion(geolocalizacion_persona, estado)
-    lista_mascotas_reportadas = mongodb.obtener_mascotas_perdidas(geolocalizacion_persona, estado)
-
+    lista_mascotas_reportadas = mascota_service.obtener_label_img_mascotas(geolocalizacion_persona, estado)
+    img_array = np.empty((len(lista_mascotas_reportadas),h,w,c))
+    
     filenames = np.empty(0)
     labels = np.empty(0)
-
-    image_array = np.empty((len(lista_mascotas_reportadas),h,w,c))
-
+    
     print('Loading the arrays... {}'.format(datetime.now()))
-    for indice, data_mascota in enumerate(lista_mascotas_reportadas):
-        if data_mascota:
-            filenames = np.append(filenames, data_mascota['file_name'])
-            labels = np.append(labels, data_mascota['label'])
-            image_db = data_mascota['list_encoded_string'][0]
-            bytestring = base64.b64decode(image_db)
-            image = np.array(Image.open(io.BytesIO(bytestring)))/255.0
-            image_array[indice] = image
+    for indice, (label,file_name,img_base64) in enumerate(lista_mascotas_reportadas):
+        filenames = np.append(filenames, file_name)
+        labels = np.append(labels, label)
+        img_array[indice] = encode_string_to_array(img_base64)
             
     if len(labels) == 0:
         print('[Warning] No se encontró registros en base de datos.')
         nbof_classes = 0
-        return filenames, image_array, labels, nbof_classes
+        return filenames, img_array, labels, nbof_classes
 
     print('Done. {}'.format(datetime.now()))
-    print('Total number of imported pictures: {:d}'.format(len(labels)))
-
     nbof_classes = len(np.unique(labels))
-    print('Total number of classes: {:d}'.format(nbof_classes))
-    return filenames, image_array, labels, nbof_classes
+    print('Total number of imported pictures: {:d}. Total number of classes: {:d}'.format(len(labels),nbof_classes))
+    return filenames, img_array, labels, nbof_classes
 
 def _query_image_tensorflow(predict_imagenes_cargadas, predict, image_array, labels_test, distances):
     print('Inicio  de predecir imagen(es) de rostro(s) de mascota')
@@ -159,7 +142,7 @@ def _obtener_label_imagenes_cercanas(list_rutas):
             
             if not (label in seen or seen_add(label)):
                 if indice_ruta > 0:
-                    distancia_aux = np.sum([prueba[-1][2], np.float32(0.000001)])
+                    distancia_aux = np.sum([prueba[-1][2], np.float32(0.0012)])
                     if distancia_aux <= distancia:
                         prueba.append((array_img, label, distancia))
 
@@ -174,27 +157,8 @@ def _obtener_label_imagenes_cercanas(list_rutas):
         print(e)
         return False, None
 
-def _obtener_data_mascota(label_image, geolocalizacion_persona, azure_storage_cliente_mascotas):
-    flag, data_mascota, mensaje = mongodb.obtener_mascota(str(label_image))
-    if flag:
-        lista = list()
-        full_file_name_aux = str(data_mascota['full_file_name'])
-        for indice, _ in enumerate(data_mascota['list_encoded_string']):
-            lista.append(azure_storage_cliente_mascotas.get_file_public_url(f'{full_file_name_aux.split("_")[0]}_{indice}.jpg'))
 
-        #data_mascota['list_encoded_string'] = [encoded_string.decode("utf-8") for encoded_string in data_mascota['list_encoded_string']]
-        data_mascota['list_encoded_string'] = lista
-        return flag, data_mascota
-    return flag, mensaje
-    
-# DECLARAR VARIABLES
-model = model_config.cargar_modelo()
-#filenames_test, image_array, labels, nbof_classes = _obtener_ruta_de_imagen()
-#predict_tensorflow_db_imagenes = _predict_tensorflow(model, image_array)
-filenames_test, image_array, labels, nbof_classes = np.empty(0), np.empty((1,h,w,c)), np.empty(0), 0
-predict_tensorflow_db_imagenes = np.empty((0,32))
-
-def predict_data(list_img_paths, imagenes_recortadas_base64, mascota_datos, azure_storage_cliente_mascotas):
+def predict_data(list_img_paths, mascota_datos, azure_storage_cliente_mascotas):
     results={}
     try:
         # Consulta por Latitud y Longitud
@@ -203,16 +167,14 @@ def predict_data(list_img_paths, imagenes_recortadas_base64, mascota_datos, azur
         global image_array
         global labels
         global nbof_classes
-        filenames_test, image_array, labels, nbof_classes = _obtener_ruta_de_imagen(mascota_datos.geolocalizacion_reportado, mascota_datos.estado)
+        filenames_test, image_array, labels, nbof_classes = _obtener_data_y_label_mascotas(mascota_datos.geolocalizacion_reportado, mascota_datos.estado)
         predict_tensorflow_db_imagenes = _predict_tensorflow_array(model, image_array)
 
-        list_img_arrays = np.empty((len(imagenes_recortadas_base64),h,w,c))
-        
-        list_img_paths.sort()
+        list_img_arrays = np.empty((len(list_img_paths),h,w,c))
         for indice, img_path in enumerate(list_img_paths):
             list_img_arrays[indice] = sk.io.imread(img_path)/255.0
-        
-        predict_tensorflow_imagenes_cargadas = _predict_tensorflow(model, list_img_paths)
+        predict_tensorflow_imagenes_cargadas = _predict_tensorflow_array(model, list_img_arrays)
+        #predict_tensorflow_imagenes_cargadas = _predict_tensorflow(model, list_img_paths)
         
         if predict_tensorflow_db_imagenes.size > 0:
             flag, images_and_distances = _query_image_tensorflow(predict_tensorflow_imagenes_cargadas, predict_tensorflow_db_imagenes, image_array, labels, nbof_classes)
@@ -225,27 +187,20 @@ def predict_data(list_img_paths, imagenes_recortadas_base64, mascota_datos, azur
             #print('id_images_and_distances', id_images_and_distances)
             list_resultados_parecidos = list()
             for (_, label, distancia) in id_images_and_distances:
-                flag, mascota = _obtener_data_mascota(label, mascota_datos.geolocalizacion_reportado, azure_storage_cliente_mascotas)
+                flag, mascota, mensaje = mascota_service.obtener_data(label, distancia, azure_storage_cliente_mascotas)
+                if not flag:
+                    return {'resultados':[],'mensaje':mensaje,'codigo':503}
                 if flag:
-                    mascota['label'] = label
-                    mascota['distancia'] = distancia
                     list_resultados_parecidos.append(mascota)
             #print(list_resultados_parecidos)
-            results['resultados'] = list_resultados_parecidos
-            results['mensaje'] = 'Si se han encontrado mascotas parecidas.'
-            results['codigo'] = 200
+            return {'resultados':list_resultados_parecidos,'mensaje':'Si se han encontrado mascotas parecidas.','codigo':200}
         else:
-            results['resultados'] = []
-            results['mensaje'] = 'No se han encontrado mascotas parecidas.'
-            results['codigo'] = 404
+            return {'resultados':[],'mensaje':'No se han encontrado mascotas parecidas.','codigo':404}
     except Exception as e:
         mensaje = 'Hubo un error al predecir la imágen'
-        results['resultados'] = []
-        results['mensaje'] = mensaje
-        results['codigo'] = 503
         print('{} ({})'.format(mensaje, datetime.now()))
         print('Hubo un error. {}'.format(e))
-    return results
+        return {'resultados':[],'mensaje':mensaje,'codigo':503}
 
 # este método debe actualizar: predict_tensorflow_db_imagenes, filenames_test, labels, nbof_classes
 def add_image_to_memory_predictions(list_img_paths, label):
@@ -259,12 +214,7 @@ def add_image_to_memory_predictions(list_img_paths, label):
     images = np.empty((len(list_img_paths),h,w,c))
     # Base64
     for i,img_path in enumerate(list_img_paths):
-        with open(img_path,'rb') as image_file:
-            img_base64_encode = base64.b64encode(image_file.read())
-            img_base64 = base64.b64decode(img_base64_encode)
-            image = np.array(Image.open(io.BytesIO(img_base64)))/255.0 # Reducción en distancia
-            images[i] = image
-            #images[i] = sk.io.imread(img_path)/255.0
+        images[i] = sk.io.imread(img_path)/255.0
 
     predict_tensorflow_imagen_cargada = _predict_tensorflow(model, list_img_paths)
     

@@ -4,19 +4,17 @@ from datetime import datetime
 
 from .dog_face_cropper import DogFaceCropper
 
-from src.util import eliminar_archivos_temporales, download_image
+from src.util import eliminar_archivos_temporales, download_image, read_bytes_from_file
 
 dfc = DogFaceCropper('./src/cropper/detectors')
 
 class DogFaceCropperService():
 
     def __init__(self):
-        pass
-
-    def obtener_nombre_archivos(self):
         if not os.path.exists('./temp_crop/'):
             os.mkdir('./temp_crop/')
 
+    def obtener_nombre_archivos(self):
         current_date = datetime.utcnow().strftime('%Y-%m-%d_%H%M%S.%f')[:-3]
         nombre_imagen_a_recortar = './temp_crop/image_{}.jpg'.format(current_date)
         nombre_imagen_recortada = './temp_crop/new_image_{}.jpg'.format(current_date)
@@ -39,7 +37,7 @@ class DogFaceCropperService():
                     img = file.read()
                 
                 codigo, mensaje  = 200, 'La foto contiene un rostro de perro.'
-                resultado_imagen = base64.b64encode(img)#.decode('utf-8')
+                resultado_imagen = base64.b64encode(img)
                 #eliminar_archivos_temporales(nombre_imagen_recortada)
             else:
                 codigo, mensaje  = 400, 'La foto no contiene un rostro de perro.'
@@ -57,44 +55,41 @@ class DogFaceCropperService():
             results['codigo'] = 503
             return False, None, None, results
     
-    def descargar_imagenes_mascota(self, list_img_url):
+    def obtener_imagenes_recortadas(self, list_img_url):
         print('Inicio de descarga de imágenes de mascota')
         results={}
         imagenes_recortadas_base64 = []
         list_img_paths = [] # Ubicación de los archivos en disco
         try:
             if len(list_img_url) == 0:
-                results['mensaje'] = 'Debe cargar al menos una imagen de mascota a recortar.'
-                results['codigo'] = 400
+                results = {'mensaje':'Debe cargar al menos una imagen de mascota a recortar.', 'codigo': 400}
                 return False, [], [], results
             
-            for img_url in list_img_url:
+            contador_error_img_url = 0
+            for indice_list_img_url,img_url in enumerate(list_img_url):
                 try:
                     nombre_imagen_a_recortar, nombre_imagen_recortada = self.obtener_nombre_archivos()
                     
-                    flag, img_path = download_image(img_url, nombre_imagen_a_recortar)
-                    print(nombre_imagen_a_recortar, img_path)
-
+                    flag,mensaje = download_image(img_url, nombre_imagen_a_recortar)
+                    contador_error_img_url += 1 if not flag else 0
+                    if contador_error_img_url == len(list_img_url):
+                        results = {'mensaje':mensaje,'codigo':503}
+                    
                     if flag:
                         try:
                             flag = dfc.process_file(nombre_imagen_a_recortar, nombre_imagen_recortada)
                             if flag:
                                 list_img_paths.append(nombre_imagen_recortada)
-
-                                # Arreglo de Bytes64
-                                with open(nombre_imagen_recortada,'rb') as file:
-                                    img_base64_encode = base64.b64encode(file.read())
-                                    imagenes_recortadas_base64.append(img_base64_encode)
+                                file_base64 = read_bytes_from_file(nombre_imagen_recortada)
+                                imagenes_recortadas_base64.append(file_base64)
                                 codigo, mensaje  = 200, 'La foto contiene un rostro de perro.'
                             else:
                                 codigo, mensaje  = 400, 'La foto no contiene un rostro de perro.'
-                            results['mensaje'] = mensaje
-                            results['codigo'] = codigo
+                            results = {'mensaje':mensaje,'codigo':codigo}
                         except Exception as e:
                             eliminar_archivos_temporales(nombre_imagen_a_recortar)
                             print('Hubo un error durante el recorte de las imágenes de mascota ({}): {}'.format(datetime.now(), e))
-                            results['mensaje'] = 'Hubo un error durante el recorte de las imágenes de mascota.'
-                            results['codigo'] = 503
+                            results = {'mensaje':'Hubo un error durante el recorte de las imágenes de mascota.','codigo':503}
                             return False, [], [], results
 
                     eliminar_archivos_temporales(nombre_imagen_a_recortar)

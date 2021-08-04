@@ -4,17 +4,16 @@ import os
 import json
 
 from src.azure_storage import AzureStorageClienteMascotas
-from src.mongodb_config import MongoDB_Config
 from src.cropper.dog_face_cropper_service import DogFaceCropperService
 from saved_model.predict import predict_data
-from src.mascota_desaparecida import reportar_mascota_desaparecida, eliminar_mascota_de_memoria, reportar_mascota_encontrada, empadronar
+from src.mascota_service import MascotaService
 from src.mascota import Mascota
 from src.mascota_dueno import MascotaDueno
 from src.util import NumpyValuesEncoder, retornar_valor_campo_en_diccionario, existe_campo_en_diccionario
 
-mongodb = MongoDB_Config()
 azure_storage_cliente_mascotas = AzureStorageClienteMascotas()
 dog_face_cropper_service = DogFaceCropperService()
+mascota_service = MascotaService()
 
 port = int(os.environ.get("PORT", 5000))
 
@@ -58,19 +57,19 @@ def predict():
             estado = retornar_valor_campo_en_diccionario(data, 'estado')
             
             request_lista_imagenes = list()
-            imagenes_recortadas_bytes = []
+            lista_imagenes_recortadas_base64 = []
             
             # Opción para recuperar lista de imágenes en arreglo de bytes
             if existe_campo_en_diccionario(data, 'lista_imagenes_bytes'):
                 request_lista_imagenes = data['lista_imagenes_bytes']
 
                 if len(request_lista_imagenes) == 0:
-                    return {'mensaje':'Debe ingresar al menos una imagen (arreglo de bytes).', 'codigo': 400},400
+                    return {'mensaje':'Debe ingresar al menos una imagen (arreglo de base64).', 'codigo': 400},400
             
                 # Detección y recorte de rostro del perro
                 flag, list_img_paths, imagenes_recortadas_base64, respuesta = dog_face_cropper_service.recortar_imagenes_mascota(request_lista_imagenes)
                 if flag:
-                    imagenes_recortadas_bytes = imagenes_recortadas_base64
+                    lista_imagenes_recortadas_base64 = imagenes_recortadas_base64
                 
             # Opción para recuperar lista de imágenes en arreglo de URL's
             if existe_campo_en_diccionario(data, 'lista_imagenes_url'):
@@ -80,15 +79,15 @@ def predict():
                     return {'mensaje':'Debe ingresar al menos una imagen (URL de imagen).', 'codigo': 400},400
                 
                 # Detección y recorte de rostro del perro
-                flag, list_img_paths, imagenes_recortadas_base64, respuesta = dog_face_cropper_service.descargar_imagenes_mascota(request_lista_imagenes)
-                if flag:
-                    imagenes_recortadas_bytes = imagenes_recortadas_base64
+                flag, list_img_paths, imagenes_recortadas_base64, respuesta = dog_face_cropper_service.obtener_imagenes_recortadas(request_lista_imagenes)
+                lista_imagenes_recortadas_base64 = imagenes_recortadas_base64 if flag else []
                 
-            if len(imagenes_recortadas_bytes) > 0:
+            if lista_imagenes_recortadas_base64:
+                # Se logró identificar rostros de perros en las imagenes
                 try:
-                    mascota_datos = Mascota(mascota_dueno_datos, geolocalizacion_persona, None, caracteristicas, fecha_perdida, 
+                    mascota_datos = Mascota(mascota_dueno_datos, geolocalizacion_persona, lista_imagenes_recortadas_base64, caracteristicas, fecha_perdida, 
                                                     barrio_nombre, genero, perro_nombre, comportamiento, datos_adicionales, estado)
-                    respuesta = predict_data(list_img_paths, imagenes_recortadas_bytes, mascota_datos, azure_storage_cliente_mascotas)
+                    respuesta = predict_data(list_img_paths, mascota_datos, azure_storage_cliente_mascotas)
                     
                     dict_respuesta = respuesta
                 except Exception as e:
@@ -96,39 +95,28 @@ def predict():
                     return {'mensaje':'Hubo un error en la predicción.', 'codigo': 400},400
 
                 # Registrar en base de datos la mascota
-                mascota_datos = Mascota(mascota_dueno_datos, geolocalizacion_persona, imagenes_recortadas_bytes, caracteristicas, fecha_perdida, 
-                                        barrio_nombre, genero, perro_nombre, comportamiento, datos_adicionales, estado)
-                flag, mensaje, datos_mascota = reportar_mascota_desaparecida(mongodb, mascota_datos, azure_storage_cliente_mascotas, list_img_paths)
+                flag, mensaje, datos_mascota = mascota_service.reportar_mascota_desaparecida(mascota_datos, azure_storage_cliente_mascotas, list_img_paths)
                 
                 if not flag:
                     return {'mensaje':'Hubo un error al reportar mascota desaparecida.', 'codigo': 500},500
                 
                 # Seteo de los valores a retornar
                 full_file_name, file_name, label, identificador = datos_mascota
-                dict_mascota = dict()
-                dict_mascota['id'] = identificador
-                dict_mascota['file_name'] = file_name
-                dict_mascota['label'] = label
-                dict_mascota['full_file_name'] = full_file_name
+                dict_mascota = {'id':identificador,
+                                'file_name':file_name,
+                                'label':label,
+                                'full_file_name':full_file_name}
+                
+                dict_respuesta.update({'mascota':dict_mascota,'codigo':200,'mensaje':"{} {}".format(str(mensaje),dict_respuesta['mensaje'])})
 
-                dict_respuesta['mascota'] = dict_mascota
-                dict_respuesta['codigo'] = 200
-                dict_respuesta['mensaje'] = "{} {}".format(str(mensaje),dict_respuesta['mensaje'])
-
-                flag, data_mascotas, mensaje = mongodb.obtener_mascota_by_id(identificador)
-                #flag, data_mascotas, mensaje = mongodb.obtener_mascotas(identificador)
+                flag, data_mascotas, mensaje = mascota_service.obtener_data_by_id(identificador, azure_storage_cliente_mascotas)
                 
                 if not flag:
                     dict_respuesta['codigo'] = 503
                 else:
-                    lista = list()
-                    full_file_name_aux = str(data_mascotas['full_file_name'])
-                    for indice, _ in enumerate(data_mascotas['list_encoded_string']):
-                        lista.append(azure_storage_cliente_mascotas.get_file_public_url(f'{full_file_name_aux.split("_")[0]}_{indice}.jpg'))
-                    dict_respuesta['list_encoded_string'] = lista
-                    
-                dict_respuesta["imagenes_recortadas"] = [img_base64.decode("utf-8") for img_base64 in imagenes_recortadas_bytes]
-                print('Fin de búsqueda de mascota ({}). Ingresaron {} imagen(es) y se recortó {} imagen(es).'.format(datetime.now(), len(request_lista_imagenes), len(imagenes_recortadas_bytes)))
+                    dict_respuesta['list_encoded_string'] = data_mascotas['list_encoded_string']
+                dict_respuesta["imagenes_recortadas"] = [img_base64.decode("utf-8") for img_base64 in lista_imagenes_recortadas_base64]
+                print('Fin de búsqueda de mascota ({}). Ingresaron {} imagen(es) y se recortó {} imagen(es).'.format(datetime.now(), len(request_lista_imagenes), len(lista_imagenes_recortadas_base64)))
                 return app.response_class(
                     response=json.dumps(dict_respuesta, cls=NumpyValuesEncoder),
                     status=200,
@@ -173,70 +161,65 @@ def mascota_empadronar():
             estado = retornar_valor_campo_en_diccionario(data, 'estado')
             
             request_lista_imagenes = list()
-            imagenes_recortadas_bytes = []
             
             # Opción para recuperar lista de imágenes en arreglo de bytes
             if existe_campo_en_diccionario(data, 'lista_imagenes_bytes'):
                 request_lista_imagenes = data['lista_imagenes_bytes']
-            
-                # Detección y recorte de rostro del perro
-                flag, imagenes_mascota_recortadas_bytes, respuesta = dog_face_cropper_service.recortar_imagenes_mascota(request_lista_imagenes)
-                if flag:
-                    imagenes_recortadas_bytes = imagenes_mascota_recortadas_bytes
-                
+
                 if len(request_lista_imagenes) == 0:
-                    return {'mensaje':'Debe ingresar al menos una imagen (arreglo de bytes).', 'codigo': 400},400
-            
+                    return {'mensaje':'Debe ingresar al menos una imagen (arreglo de base64).', 'codigo': 400},400
+
+                # Detección y recorte de rostro del perro
+                flag, list_img_paths, imagenes_recortadas_base64, respuesta = dog_face_cropper_service.recortar_imagenes_mascota(request_lista_imagenes)
+                if flag:
+                    lista_imagenes_recortadas_base64 = imagenes_recortadas_base64
+                
             # Opción para recuperar lista de imágenes en arreglo de URL's
             if existe_campo_en_diccionario(data, 'lista_imagenes_url'):
                 request_lista_imagenes = data['lista_imagenes_url']
-            
-                # Detección y recorte de rostro del perro
-                flag, lista_imagenes_bytes = dog_face_cropper_service.descargar_imagenes_mascota(request_lista_imagenes)
-                if flag:
-                    flag, imagenes_mascota_recortadas_bytes, respuesta = dog_face_cropper_service.recortar_imagenes_mascota(lista_imagenes_bytes)
-                    if flag:
-                        imagenes_recortadas_bytes = imagenes_mascota_recortadas_bytes
-                    
-                    if len(request_lista_imagenes) == 0:
-                        return {'mensaje':'Debe ingresar al menos una imagen (URL de imagen).', 'codigo': 400},400
-            
-            if len(imagenes_recortadas_bytes) > 0:
+
+                if len(request_lista_imagenes) == 0:
+                    return {'mensaje':'Debe ingresar al menos una imagen (URL de imagen).', 'codigo': 400},400
+                
+                flag, list_img_paths, imagenes_recortadas_base64, respuesta = dog_face_cropper_service.obtener_imagenes_recortadas(request_lista_imagenes)
+                lista_imagenes_recortadas_base64 = imagenes_recortadas_base64 if flag else []
+
+            if lista_imagenes_recortadas_base64:
+                # Se logró identificar rostros de perros en las imagenes
                 try:
-                    mascota_datos = Mascota(mascota_dueno_datos, geolocalizacion_persona, imagenes_recortadas_bytes, caracteristicas, fecha_perdida, 
-                                            barrio_nombre, genero, perro_nombre, comportamiento, datos_adicionales, estado)
-                    flag,respuesta,datos = empadronar(mongodb,mascota_datos,azure_storage_cliente_mascotas)
+                    mascota_datos = Mascota(mascota_dueno_datos, geolocalizacion_persona, lista_imagenes_recortadas_base64, caracteristicas, fecha_perdida, 
+                                                    barrio_nombre, genero, perro_nombre, comportamiento, datos_adicionales, estado)
+                    flag, mensaje, datos = mascota_service.reportar_mascota_desaparecida(mascota_datos, azure_storage_cliente_mascotas, list_img_paths)
+
                     if not flag:
-                        return {'mensaje':respuesta,'codigo':500},500
+                        return {'mensaje':'Hubo un error al empadronar mascota.', 'codigo': 500},500
+                    print("00000")
+                    print(mensaje)
                     # Seteo de los valores a retornar
                     full_file_name, file_name, label, identificador = datos
-                    dict_respuesta['id'] = identificador
-                    dict_respuesta['file_name'] = file_name
-                    dict_respuesta['label'] = label
-                    dict_respuesta['full_file_name'] = full_file_name
-                    dict_respuesta['codigo'] = 200
-                    dict_respuesta['mensaje'] = respuesta
-
-                    lista = list()
-                    full_file_name_aux = str(dict_respuesta['full_file_name'])
-                    for indice, _ in enumerate(imagenes_recortadas_bytes):
-                        lista.append(azure_storage_cliente_mascotas.get_file_public_url(f'{full_file_name_aux.split("_")[0]}_{indice}.jpg'))
-                    dict_respuesta['imagenes_recortadas'] = lista
-
+                    dict_respuesta = {'id':identificador,
+                                      'file_name':file_name,
+                                      'label':label,
+                                      'full_file_name':full_file_name,
+                                      'codigo':200,
+                                      'mensaje':'Se logró empadronar.'}
+                    
+                    flag, data_mascotas, mensaje = mascota_service.obtener_data_by_id(identificador, azure_storage_cliente_mascotas)
+                    if not flag:
+                        dict_respuesta['codigo'] = 503
+                    else:
+                        dict_respuesta['list_encoded_string'] = data_mascotas['list_encoded_string']
                 except Exception as e:
                     print('Hubo un error al empadronar la mascota ({}): {}'.format(datetime.now(), e))
                     return {'mensaje':'Hubo un error en el empadronamiento', 'codigo': 400},400
                 
-                #dict_respuesta["imagenes_recortadas"] = imagenes_recortadas_bytes
-                print('Fin de empadronamiento de mascota ({}). Ingresaron {} imagen(es) y se recortó {} imagen(es).'.format(datetime.now(), len(request_lista_imagenes), len(imagenes_recortadas_bytes)))
+                print('Fin de empadronamiento de mascota ({}). Ingresaron {} imagen(es) y se recortó {} imagen(es).'.format(datetime.now(), len(request_lista_imagenes), len(imagenes_recortadas_base64)))
                 return json.dumps(dict_respuesta, cls=NumpyValuesEncoder),200
             
             return json.dumps(respuesta, cls=NumpyValuesEncoder),200
     except Exception as e:
         print('Hubo un error al empadronar la mascota({}): {}'.format(datetime.now(), e))
         return {'mensaje':'Hubo un error al empadronar la mascota', 'codigo': 503},503
-
-
 
 @app.route('/mascotas', methods=['POST'])
 def report():
@@ -276,7 +259,7 @@ def report():
             
             mascota_datos = Mascota(mascota_dueno_datos, geolocalizacion_persona, lista_imagenes_bytes, caracteristicas, fecha_perdida, 
                                             barrio_nombre, genero, perro_nombre, comportamiento, datos_adicionales, estado)
-            flag, mensaje, datos_mascota = reportar_mascota_desaparecida(mongodb, mascota_datos, azure_storage_cliente_mascotas, None)
+            flag, mensaje, datos_mascota = mascota_service.reportar_mascota_desaparecida(mascota_datos, azure_storage_cliente_mascotas, None)
             
             if not flag:
                 return {'mensaje':'Hubo un error al reportar mascota desaparecida.', 'codigo': 500},500
@@ -334,7 +317,7 @@ def update():
                                     barrio_nombre, genero, perro_nombre, comportamiento, datos_adicionales,
                                     estado=estado)
             
-            flag, mensaje = mongodb.actualizar_mascota(id, mascota_datos)
+            flag, mensaje = mascota_service.actualizar_datos(id, mascota_datos)
             
             if not flag:
                 dict_respuesta['codigo'] = 500
@@ -357,21 +340,10 @@ def delete():
         if data == None:
             return {'mensaje':'No se identifico objetos dentro del payload.', 'codigo': 400},400
         else:
-            try:
-                flag, mensaje, label_mascota = mongodb.eliminar_mascota(
-                        id=retornar_valor_campo_en_diccionario(data, 'id'),
-                        label=retornar_valor_campo_en_diccionario(data, 'label'),
-                    )
-            except Exception as e:
-                print('Error al eliminar mascota en base de datos ({}): {}'.format(datetime.now(), e))
-                return {'mensaje':mensaje, 'codigo': 503},503
-            
-            if flag:
-                flag, mensaje = azure_storage_cliente_mascotas.eliminar_carpeta(label_mascota)
-
-                if flag:
-                    flag, mensaje = eliminar_mascota_de_memoria(label_mascota)
-                    
+            id = retornar_valor_campo_en_diccionario(data, 'id')
+            label = retornar_valor_campo_en_diccionario(data, 'label')
+            flag, mensaje = mascota_service.eliminar_mascota(id,label,azure_storage_cliente_mascotas)
+        
             if not flag:
                 dict_respuesta['codigo'] = 500
             else:
@@ -401,10 +373,11 @@ def found():
                 email = retornar_valor_campo_en_diccionario(data['dueno'], 'email') # Correo electrónico de la persona que reportó desaparición
                 contacto = retornar_valor_campo_en_diccionario(data['dueno'], 'contacto')  # Números de teléfonos asociados al perro desaparecido
             
-            flag, mensaje, label = mongodb.encontrar_mascota(data['id'])
+            if not existe_campo_en_diccionario(data, 'id'):
+                return {'mensaje':'Debe enviar el número de denuncia.', 'codigo': 500},500
 
-            if flag:
-                flag, mensaje = reportar_mascota_encontrada(label)
+            id_denuncia = data['id']
+            flag, mensaje = mascota_service.reportar_mascota_encontrada(id_denuncia)
             
             if not flag:
                 dict_respuesta['codigo'] = 503
@@ -437,18 +410,11 @@ def ownerpets():
                 if identificador is not None:
                     identificador = str(identificador)
             
-            flag, data_mascotas, mensaje = mongodb.obtener_mascota_by_id(id_denuncia)
-            #flag, data_mascotas, mensaje = mongodb.obtener_mascotas(identificador)
+            flag, data_mascotas, mensaje = mascota_service.obtener_data_by_id(id_denuncia, azure_storage_cliente_mascotas)
             
             if not flag:
                 dict_respuesta['codigo'] = 503
             else:
-                lista = list()
-                full_file_name_aux = str(data_mascotas['full_file_name'])
-                for indice, _ in enumerate(data_mascotas['list_encoded_string']):
-                    lista.append(azure_storage_cliente_mascotas.get_file_public_url(f'{full_file_name_aux.split("_")[0]}_{indice}.jpg'))
-                data_mascotas['list_encoded_string'] = lista
-                
                 dict_respuesta['codigo'] = 200
                 dict_respuesta['mascotas'] = data_mascotas
             dict_respuesta['mensaje'] = mensaje
@@ -459,4 +425,4 @@ def ownerpets():
         return {'mensaje':'Hubo un error al obtener datos de la mascota.', 'codigo': 503},503
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=port, debug=True, threaded=True)
+    app.run(host='0.0.0.0', port=port, threaded=True)

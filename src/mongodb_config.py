@@ -103,10 +103,7 @@ class MongoDB_Config():
         '''
         print('Inicio obtener data mascota {} de base de datos ({})'.format(label, datetime.now()))
         try:
-            mascota = self.db[DB_COLECCION].find_one(
-                # Búsqueda por campo label
-                {'label':label}
-                )
+            mascota = self.db[DB_COLECCION].find_one({'label':label})
             print('Fin obtener data mascota {} de base de datos ({})'.format(label, datetime.now()))
             if mascota:
                 del mascota['_id']

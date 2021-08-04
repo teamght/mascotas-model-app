@@ -1,10 +1,13 @@
 import os
+import io
 import json
 import numpy as np
 import urllib
 import shutil
 import string
 import random
+import base64
+from PIL import Image
 from datetime import datetime
 from imutils import face_utils
 
@@ -80,8 +83,32 @@ def download_image(img_url, img_path):
         print('Imagen descargada de {} y movida a {}'.format(img_url, img_path))
         return True, to
     except Exception as e:
-        print('Hubo un error al descargar la imagen desde URL ({}): {}'.format(datetime.now(), e))
-        return False, None
+        print('Hubo un error al descargar la imagen ({}): {}'.format(datetime.now(), e))
+        return False, "Hubo un error al descargar la imagen."
+
+
+def encode_string_to_base64(string_value):
+    # Encode the Python str into bytes and Base64 encode the bytes
+    return base64.b64encode(string_value)
+
+
+def decode_base64_to_string(base64_value):
+    # Base64 decode the encoded string into bytes and decode the bytes into str
+    return base64.b64decode(base64_value)
+
+
+def read_bytes_from_file(file_path):
+    file_base64 = None
+    with open(file_path,'rb') as file:
+        file_base64 = encode_string_to_base64(file.read())
+    return file_base64
+
+
+def encode_string_to_array(base64_value):
+    img_base64 = decode_base64_to_string(base64_value)
+    img = Image.open(io.BytesIO(img_base64))
+    imag_array = np.array(img)/255.0
+    return imag_array
 
 
 def retornar_valor_campo_en_diccionario(diccionario, campo):
