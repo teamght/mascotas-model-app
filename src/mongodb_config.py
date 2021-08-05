@@ -125,7 +125,7 @@ class MongoDB_Config():
             if mascota:
                 del mascota['_id']
                 mascota['list_encoded_string'] = [encoded_string.decode("utf-8") for encoded_string in mascota['list_encoded_string']]
-                return True, mascota, 'Se encontró mascota con la denuncia ingresada.'
+                return True, mascota, f"Se encontró mascota con la denuncia ingresada. Tiene {len(mascota['list_encoded_string'])} foto(s)."
             return False, None, 'No se encontró mascota con la denuncia ingresada.'
         except Exception as e:
             mensaje = 'Hubo un error en obtener data mascota de base de datos'

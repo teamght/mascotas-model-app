@@ -38,13 +38,21 @@ class MascotaService():
             return flag, data_mascota, mensaje
         return flag, None, mensaje
     
-    def obtener_data_by_id(self, id, azure_storage_cliente_mascotas):
-        flag, data_mascota, mensaje = mongodb.obtener_mascota_by_id(str(id))
+    def obtener_data_by_id(self, id_denuncia, azure_storage_cliente_mascotas):
+        i = 1
+        while i < 5:
+            flag, data_mascota, mensaje = mongodb.obtener_mascota_by_id(str(id_denuncia))
+            print(f"Resultado de la búsqueda de la denuncia {id_denuncia} (intento {i}): {flag}")
+            if flag:
+                break
+            i += 1
+        
         if flag:
             full_file_name_aux = str(data_mascota['full_file_name'])
             data_mascota['list_encoded_string'] = self.obtener_public_urls(azure_storage_cliente_mascotas,
                                                                     full_file_name_aux,
                                                                     data_mascota['list_encoded_string'])
+            print(f"Tamaño de la lista de URL's publicas de la denuncia {id_denuncia}: {len(data_mascota['list_encoded_string'])}")
             return flag, data_mascota, mensaje
         return flag, mensaje, mensaje
     

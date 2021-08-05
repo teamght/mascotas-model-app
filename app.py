@@ -101,20 +101,21 @@ def predict():
                     return {'mensaje':'Hubo un error al reportar mascota desaparecida.', 'codigo': 500},500
                 
                 # Seteo de los valores a retornar
-                full_file_name, file_name, label, identificador = datos_mascota
-                dict_mascota = {'id':identificador,
+                full_file_name, file_name, label, id_denuncia = datos_mascota
+                dict_mascota = {'id':id_denuncia,
                                 'file_name':file_name,
                                 'label':label,
                                 'full_file_name':full_file_name}
                 
                 dict_respuesta.update({'mascota':dict_mascota,'codigo':200,'mensaje':"{} {}".format(str(mensaje),dict_respuesta['mensaje'])})
 
-                flag, data_mascotas, mensaje = mascota_service.obtener_data_by_id(identificador, azure_storage_cliente_mascotas)
+                flag, data_mascotas, mensaje = mascota_service.obtener_data_by_id(id_denuncia, azure_storage_cliente_mascotas)
                 
-                if not flag:
-                    dict_respuesta['codigo'] = 503
+                if data_mascotas:
+                    if data_mascotas['list_encoded_string']:
+                        dict_respuesta['list_encoded_string'] = data_mascotas['list_encoded_string']
                 else:
-                    dict_respuesta['list_encoded_string'] = data_mascotas['list_encoded_string']
+                    dict_respuesta['codigo'] = 503
                 dict_respuesta["imagenes_recortadas"] = [img_base64.decode("utf-8") for img_base64 in lista_imagenes_recortadas_base64]
                 print('Fin de búsqueda de mascota ({}). Ingresaron {} imagen(es) y se recortó {} imagen(es).'.format(datetime.now(), len(request_lista_imagenes), len(lista_imagenes_recortadas_base64)))
                 return app.response_class(
@@ -196,15 +197,15 @@ def mascota_empadronar():
                     print("00000")
                     print(mensaje)
                     # Seteo de los valores a retornar
-                    full_file_name, file_name, label, identificador = datos
-                    dict_respuesta = {'id':identificador,
+                    full_file_name, file_name, label, id_denuncia = datos
+                    dict_respuesta = {'id':id_denuncia,
                                       'file_name':file_name,
                                       'label':label,
                                       'full_file_name':full_file_name,
                                       'codigo':200,
                                       'mensaje':'Se logró empadronar.'}
                     
-                    flag, data_mascotas, mensaje = mascota_service.obtener_data_by_id(identificador, azure_storage_cliente_mascotas)
+                    flag, data_mascotas, mensaje = mascota_service.obtener_data_by_id(id_denuncia, azure_storage_cliente_mascotas)
                     if not flag:
                         dict_respuesta['codigo'] = 503
                     else:
@@ -265,8 +266,8 @@ def report():
                 return {'mensaje':'Hubo un error al reportar mascota desaparecida.', 'codigo': 500},500
             
             # Seteo de los valores a retornar
-            full_file_name, file_name, label, identificador = datos_mascota
-            dict_respuesta['id'] = identificador
+            full_file_name, file_name, label, id_denuncia = datos_mascota
+            dict_respuesta['id'] = id_denuncia
             dict_respuesta['file_name'] = file_name
             dict_respuesta['label'] = label
             dict_respuesta['full_file_name'] = full_file_name
