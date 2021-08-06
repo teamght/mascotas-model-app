@@ -34,7 +34,8 @@ class MascotaService():
             data_mascota['list_encoded_string'] = self.obtener_public_urls(azure_storage_cliente_mascotas,
                                                                     full_file_name_aux,
                                                                     data_mascota['list_encoded_string'])
-            data_mascota.update({'label':label_image,'distancia':distancia})
+            # Workaround ver distancia
+            data_mascota.update({'label':label_image,'distancia':distancia,'caracteristicas':distancia,'comportamiento':distancia,'datos_adicionales':distancia})
             return flag, data_mascota, mensaje
         return flag, None, mensaje
     
